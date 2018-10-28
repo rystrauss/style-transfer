@@ -1,3 +1,4 @@
+import sys
 import time
 
 import click
@@ -10,17 +11,18 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
 
 @click.command()
-@click.argument('target', type=click.Path())
-@click.argument('reference', type=click.Path())
+@click.argument('target_path', type=click.Path())
+@click.argument('reference_path', type=click.Path())
 @click.option('--iterations', type=click.INT, default=20, help="The number of iterations to run the optimization.")
-@click.option('--img-height', type=click.INT, default=400,
+@click.option('--img_height', type=click.INT, default=400,
               help='The height of the output image. Width will be based on the aspect ratio of the target image.')
-@click.option('--tv-wight', type=click.FLOAT, default=0.0001, help='The weight given to the total variation loss.')
-@click.option('--style-wight', type=click.FLOAT, default=1., help='The weight given to the style loss.')
-@click.option('--content-wight', type=click.FLOAT, default=0.025, help='The weight given to the content loss.')
-@click.option('--save-every', type=click.INT, default=0, help='The frequency with with to save the output image.')
+@click.option('--tv_weight', type=click.FLOAT, default=0.0001, help='The weight given to the total variation loss.')
+@click.option('--style_weight', type=click.FLOAT, default=1., help='The weight given to the style loss.')
+@click.option('--content_weight', type=click.FLOAT, default=0.025, help='The weight given to the content loss.')
+@click.option('--save_every', type=click.INT, default=sys.maxsize,
+              help='The frequency with with to save the output image.')
 @click.option('--verbose', type=click.BOOL, default=False, help='Specifies the output verbosity.')
-def main(target_image_path, reference_image_path, iterations, img_height, total_variation_weight,
+def main(target_path, reference_path, iterations, img_height, tv_weight,
          style_weight, content_weight, save_every, verbose):
     """Performs neural style transfer on a target image and reference image.
 
@@ -106,12 +108,12 @@ def main(target_image_path, reference_image_path, iterations, img_height, total_
             return grad_values
 
     # Set image dimensions
-    width, height = load_img(target_image_path).size
+    width, height = load_img(target_path).size
     img_width = int(width * img_height / height)
 
     # Define images
-    target_image = K.constant(preprocess_image(target_image_path))
-    reference_image = K.constant(preprocess_image(reference_image_path))
+    target_image = K.constant(preprocess_image(target_path))
+    reference_image = K.constant(preprocess_image(reference_path))
     combination_image = K.placeholder((1, img_height, img_width, 3))
 
     # Concatenate images for batch processing
@@ -152,7 +154,7 @@ def main(target_image_path, reference_image_path, iterations, img_height, total_
         loss = loss + (style_weight / len(style_layers)) * sl
 
     # Add the total variation loss
-    loss = loss + total_variation_weight * total_variation_loss(combination_image)
+    loss = loss + tv_weight * total_variation_loss(combination_image)
 
     # Get the gradients of the generated image with regard to the loss
     grads = K.gradients(loss, combination_image)[0]
@@ -163,7 +165,7 @@ def main(target_image_path, reference_image_path, iterations, img_height, total_
     evaluator = Evaluator()
 
     # The target image is the initial state
-    x = preprocess_image(target_image_path)
+    x = preprocess_image(target_path)
     x = x.flatten()
 
     # Run L-BFGS optimization over the pixels of the generated image to minimize the neural style loss.
@@ -180,14 +182,15 @@ def main(target_image_path, reference_image_path, iterations, img_height, total_
         if i == iterations - 1 or (i + 1) % save_every == 0:
             img = x.copy().reshape((img_height, img_width, 3))
             img = deprocess_image(img)
-            fname = 'stylized-iter-{}.png'.format(i)
+            fname = '{}-iter-{}.png'.format(target_path, i + 1)
             imsave(fname, img)
             if verbose:
                 print('Image saved.')
 
         if verbose:
             end_time = time.time()
-            print('Iteration %d completed in %ds' % (i, end_time - start_time))
+            print('Iteration %d completed in %ds' % (i + 1, end_time - start_time))
+            print()
 
 
 if __name__ == '__main__':
