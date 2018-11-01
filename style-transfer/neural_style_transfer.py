@@ -3,7 +3,7 @@ import time
 
 import click
 import numpy as np
-from scipy.misc import imsave
+from scipy.misc import imread, imresize, imsave, fromimage, toimage
 from scipy.optimize import fmin_l_bfgs_b
 from tensorflow.keras import backend as K
 from tensorflow.keras.applications import vgg19
@@ -21,9 +21,10 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array
 @click.option('--content_weight', type=click.FLOAT, default=0.025, help='The weight given to the content loss.')
 @click.option('--save_every', type=click.INT, default=sys.maxsize,
               help='The frequency with with to save the output image.')
+@click.option('--preserve_color', type=click.BOOL, default=False, help='Enables/disables color preservation.')
 @click.option('--verbose', type=click.BOOL, default=False, help='Specifies the output verbosity.')
 def main(target_path, reference_path, iterations, img_height, tv_weight,
-         style_weight, content_weight, save_every, verbose):
+         style_weight, content_weight, save_every, preserve_color, verbose):
     """Performs neural style transfer on a target image and reference image.
 
     The style of the reference image is imposed onto the target image. This is the original implementation of
@@ -32,10 +33,16 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
     The code in this script is adapted from Francois Chollet's 'Deep Learning with Python'.
     """
 
-    def preprocess_image(image_path):
+    def preprocess_image(image_path, mode):
         """Loads and preprocesses the specified image."""
-        img = load_img(image_path, target_size=(img_height, img_width))
-        img = img_to_array(img)
+        img = imread(image_path, mode=mode)
+        img = imresize(img, size=(img_height, img_width))
+        if mode == "L":
+            temp = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+            temp[:, :, 0] = img
+            temp[:, :, 1] = img.copy()
+            temp[:, :, 2] = img.copy()
+            img = temp
         img = np.expand_dims(img, axis=0)
         img = vgg19.preprocess_input(img)
         return img
@@ -112,8 +119,8 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
     img_width = int(width * img_height / height)
 
     # Define images
-    target_image = K.constant(preprocess_image(target_path))
-    reference_image = K.constant(preprocess_image(reference_path))
+    target_image = K.constant(preprocess_image(target_path, 'RGB'))
+    reference_image = K.constant(preprocess_image(reference_path, 'RGB'))
     combination_image = K.placeholder((1, img_height, img_width, 3))
 
     # Concatenate images for batch processing
@@ -165,8 +172,12 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
     evaluator = Evaluator()
 
     # The target image is the initial state
-    x = preprocess_image(target_path)
+    x = preprocess_image(target_path, 'L' if preserve_color else 'RGB')
     x = x.flatten()
+
+    if preserve_color:
+        original = imread(target_path, mode='RGB')
+        original = imresize(original, (img_height, img_width))
 
     # Run L-BFGS optimization over the pixels of the generated image to minimize the neural style loss.
     for i in range(iterations):
@@ -182,7 +193,13 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
         if i == iterations - 1 or (i + 1) % save_every == 0:
             img = x.copy().reshape((img_height, img_width, 3))
             img = deprocess_image(img)
-            fname = '{}-iter-{}.png'.format(target_path, i + 1)
+
+            if preserve_color:
+                img = fromimage(toimage(img, mode='RGB'), mode='YCbCr')
+                img[:, :, 1:] = original[:, :, 1:]
+                img = fromimage(toimage(img, mode='YCbCr'), mode='RGB')
+
+            fname = '{}-iter-{}{}'.format(target_path.split('.')[:-1], i + 1, target_path.split('.')[-1])
             imsave(fname, img)
             if verbose:
                 print('Image saved.')
