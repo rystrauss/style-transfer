@@ -176,7 +176,7 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
     x = x.flatten()
 
     if preserve_color:
-        original = imread(target_path, mode='RGB')
+        original = imread(target_path, mode='YCbCr')
         original = imresize(original, (img_height, img_width))
 
     # Run L-BFGS optimization over the pixels of the generated image to minimize the neural style loss.
@@ -199,7 +199,7 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
                 img[:, :, 1:] = original[:, :, 1:]
                 img = fromimage(toimage(img, mode='YCbCr'), mode='RGB')
 
-            fname = '{}-iter-{}{}'.format(target_path.split('.')[:-1], i + 1, target_path.split('.')[-1])
+            fname = 'stylized-{}.jpg'.format(i + 1)
             imsave(fname, img)
             if verbose:
                 print('Image saved.')
