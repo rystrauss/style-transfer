@@ -27,12 +27,11 @@ This is the original neural style transfer algorithm, introduced by Leon Gatys e
 [Image Style Transfer Using Convolutional Neural Networks][1]. The algorithm uses learned image representations
 in deep convolutional neural networks to complete the style transfer.
 
-Below is an example of the output of this method, where the style of The Great Wave off Kanagawa is transferred
-to the Astronaut Sloth.
+Below is an example of the output of this method, where the style of
+[The Great Wave off Kanagawa](examples/reference-wave.jpg) is transferred to the
+[Astronaut Sloth](examples/target-sloth.jpg).
 
-[Astronaut Sloth](examples/target-sloth.jpg)
-[The Great Wave off Kanagawa](examples/reference-wave.jpg)
-[The Great Sloth off Kanagawa](examples/stylized-sloth-wave.jpg)
+![The Great Sloth off Kanagawa](examples/stylized-sloth-wave.jpg)
 
 The script `neural_style_transfer.py` contains an implementation of this algorithm and a command line interface
 for performing the transfer on two images. The code is adapted from Francois Chollet's *Deep Learning with Python*.
