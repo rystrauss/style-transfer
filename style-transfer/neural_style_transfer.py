@@ -7,20 +7,26 @@ from scipy.misc import imread, imresize, imsave, fromimage, toimage
 from scipy.optimize import fmin_l_bfgs_b
 from tensorflow.keras import backend as K
 from tensorflow.keras.applications import vgg19
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from tensorflow.keras.preprocessing.image import load_img
 
 
 @click.command()
 @click.argument('target_path', type=click.Path())
 @click.argument('reference_path', type=click.Path())
-@click.option('--iterations', type=click.INT, default=20, help="The number of iterations to run the optimization.")
+@click.option('--iterations', type=click.INT, default=20,
+              help='The number of iterations to run the optimization. Default is 20.')
 @click.option('--img_height', type=click.INT, default=400,
-              help='The height of the output image. Width will be based on the aspect ratio of the target image.')
-@click.option('--tv_weight', type=click.FLOAT, default=0.0001, help='The weight given to the total variation loss.')
-@click.option('--style_weight', type=click.FLOAT, default=1., help='The weight given to the style loss.')
-@click.option('--content_weight', type=click.FLOAT, default=0.025, help='The weight given to the content loss.')
+              help=('The height of the output image. Width will be based on the aspect ratio of the target image. '
+                    'Default is 400.'))
+@click.option('--tv_weight', type=click.FLOAT, default=0.0001,
+              help='The weight given to the total variation loss. Default is 0.0001.')
+@click.option('--style_weight', type=click.FLOAT, default=1.,
+              help='The weight given to the style loss. Default is 1.0.')
+@click.option('--content_weight', type=click.FLOAT, default=0.025,
+              help=('The weight given to the content loss. A higher value means the target image content will '
+                    'be more recognizable in the output. Default is 0.025.'))
 @click.option('--save_every', type=click.INT, default=sys.maxsize,
-              help='The frequency with with to save the output image.')
+              help='The frequency with with to save the output image. By default, only the last iteration is saved.')
 @click.option('--preserve_color', type=click.BOOL, default=False, help='Enables/disables color preservation.')
 @click.option('--verbose', type=click.BOOL, default=False, help='Specifies the output verbosity.')
 def main(target_path, reference_path, iterations, img_height, tv_weight,
