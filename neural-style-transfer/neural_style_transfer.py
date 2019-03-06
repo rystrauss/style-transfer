@@ -43,7 +43,7 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
         """Loads and preprocesses the specified image."""
         img = imread(image_path, mode=mode)
         img = imresize(img, size=(img_height, img_width))
-        if mode == "L":
+        if mode == 'L':
             temp = np.zeros((img_height, img_width, 3), dtype=np.uint8)
             temp[:, :, 0] = img
             temp[:, :, 1] = img.copy()
@@ -55,6 +55,7 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
 
     def deprocess_image(x):
         """Zero-centering by removing the mean pixel value from ImageNet.
+
         This reverses a transformation done by vgg19.preprocess_input.
         """
         x[:, :, 0] += 103.939
@@ -94,14 +95,14 @@ def main(target_path, reference_path, iterations, img_height, tv_weight,
             x[:, :img_height - 1, 1:, :])
         return K.sum(K.pow(a + b, 1.25))
 
-    class Evaluator(object):
+    class Evaluator:
         """This class wraps fetch_loss_and_grads in a way that allows the retrieval
         of the losses and gradients via two separate method calls, which is required
         by the SciPy optimizer that is used."""
 
         def __init__(self):
             self.loss_value = None
-            self.grads_values = None
+            self.grad_values = None
 
         def loss(self, x):
             assert self.loss_value is None
