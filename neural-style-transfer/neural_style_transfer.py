@@ -1,18 +1,223 @@
-import sys
-import time
-
 import click
 import numpy as np
-from scipy.misc import imread, imresize, imsave, fromimage, toimage
-from scipy.optimize import fmin_l_bfgs_b
-from tensorflow.keras import backend as K
-from tensorflow.keras.applications import vgg19
-from tensorflow.keras.preprocessing.image import load_img
+import tensorflow as tf
+from skimage.io import imread
+from skimage.transform import resize
+import time
+
+CONTENT_LAYERS = ['block5_conv2']
+STYLE_LAYERS = ['block1_conv1',
+                'block2_conv1',
+                'block3_conv1',
+                'block4_conv1',
+                'block5_conv1']
+
+NUM_CONTENT_LAYERS = len(CONTENT_LAYERS)
+NUM_STYLE_LAYERS = len(STYLE_LAYERS)
+
+NORM_MEANS = np.array([103.939, 116.779, 123.68])
+MIN_VALS = -NORM_MEANS
+MAX_VALS = 255 - NORM_MEANS
+
+
+def load_and_process_img(image_path, img_height, as_gray=False):
+    """Loads and preprocess an image.
+
+    Image is resized and proprocessed for the VGG19 network.
+
+    Args:
+        image_path: Path for the image to be loaded.
+        img_height: The height the image should be resized to.
+        as_gray: If true, image will be read in as grayscale.
+
+    Returns:
+        The processed image.
+    """
+    # Read in the image
+    img = imread(image_path, as_gray=as_gray)
+    # If it's grayscale, give it three channels
+    if as_gray:
+        img = np.expand_dims(img, axis=2)
+        img = np.repeat(img, 3, axis=2)
+    # Calculate image width based off aspect ratio of image
+    img_width = img.shape[0] * img_height // img.shape[1]
+    # Resize the image
+    img = resize(img, (img_height, img_width), anti_aliasing=True, mode='reflect', preserve_range=True).astype('uint8')
+    # Give image a batch dimension
+    img = np.expand_dims(img, axis=0)
+    # Preprocess for VGG19 network
+    img = tf.keras.applications.vgg19.preprocess_input(img)
+    return img.astype('float32')
+
+
+def deprocess_image(processed_img):
+    """Undo preprocessing that was applied to an image.
+
+    Args:
+        processed_img: An image that has been preprocessed.
+
+    Returns:
+        An image in standard uint8 form.
+    """
+    x = processed_img.copy()
+    if len(x.shape) == 4:
+        x = np.squeeze(x, 0)
+
+    # Perform the inverse of the VGG19 preprocessing
+    x[:, :, 0] += NORM_MEANS[0]
+    x[:, :, 1] += NORM_MEANS[1]
+    x[:, :, 2] += NORM_MEANS[2]
+    x = x[:, :, ::-1]
+
+    x = np.clip(x, 0, 255).astype('uint8')
+    return x
+
+
+def content_loss(base_content, target):
+    """Calculates the content loss between the base features and the target features.
+
+    This is simply the squared error between the layer responses for two images.
+
+    Args:
+        base_content: The base content.
+        target: The target.
+
+    Returns:
+        The content loss between the two features.
+    """
+    return tf.reduce_mean(tf.square(base_content - target))
+
+
+def gram_matrix(input_tensor):
+    """Computes the Gram matrix of the input.
+
+    Args:
+        input_tensor: A Tensor for which to calculate the Gram matrix.
+
+    Returns:
+        The Gram matrix of the input tensor.
+    """
+    channels = int(input_tensor.shape[-1])
+    a = tf.reshape(input_tensor, [-1, channels])
+    n = tf.shape(a)[0]
+    gram = tf.matmul(a, a, transpose_a=True)
+    return gram / tf.cast(n, tf.float32)
+
+
+def style_loss(base_style, gram_target):
+    """Calculates the style loss between the base content and the target.
+
+    Args:
+        base_style: The base image's style features.
+        gram_target: The Gram matrix of the target features.
+
+    Returns:
+        The style loss.
+    """
+    gram_style = gram_matrix(base_style)
+
+    return tf.reduce_mean(tf.square(gram_style - gram_target))
+
+
+def get_model():
+    """Creates a VGG19 model with access to intermediate layers.
+
+    This function will load the VGG19 model and access the intermediate layers.
+    These layers will then be used to create a new model that will take an input image
+    and return the outputs from the intermediate layers of the VGG model.
+
+    Returns:
+        A model that takes image inputs and outputs the style and content intermediate layers.
+    """
+    # Load the pretrained VGG19 network
+    vgg = tf.keras.applications.vgg19.VGG19(include_top=False, weights='imagenet')
+    vgg.trainable = False
+
+    # Get output layers corresponding to style and content layers
+    style_outputs = [vgg.get_layer(name).output for name in STYLE_LAYERS]
+    content_outputs = [vgg.get_layer(name).output for name in CONTENT_LAYERS]
+    model_outputs = style_outputs + content_outputs
+
+    # Build model
+    model = tf.keras.Model(vgg.input, model_outputs)
+
+    for layer in model.layers:
+        layer.trainable = False
+    return model
+
+
+def compute_loss(model, loss_weights, init_image, gram_style_features, content_features):
+    """This function will compute the loss total loss.
+
+    Arguments:
+        model: The model that will give us access to the intermediate layers
+        loss_weights: The weights of each contribution of each loss function.
+        (style weight, content weight, and total variation weight)
+        init_image: Our initial base image. This image is what we are updating with
+        our optimization process. We apply the gradients wrt the loss we are
+        calculating to this image.
+        gram_style_features: Precomputed gram matrices corresponding to the
+        defined style layers of interest.
+        content_features: Precomputed outputs from defined content layers of
+        interest.
+
+    Returns:
+        The total loss.
+    """
+    style_weight, content_weight = loss_weights
+
+    # Feed the init image through the network
+    model_outputs = model(init_image)
+
+    style_output_features = model_outputs[:NUM_STYLE_LAYERS]
+    content_output_features = model_outputs[NUM_STYLE_LAYERS:]
+
+    style_score = 0
+    content_score = 0
+
+    # Accumulate style losses from all layers
+    # We equally weight each contribution of each loss layer
+    for target_style, comb_style in zip(gram_style_features, style_output_features):
+        style_score += style_loss(comb_style[0], target_style)
+    style_score /= float(NUM_STYLE_LAYERS)
+
+    # Accumulate content losses from all layers
+    for target_content, comb_content in zip(content_features, content_output_features):
+        content_score += content_loss(comb_content[0], target_content)
+    content_score /= float(NUM_CONTENT_LAYERS)
+
+    style_score *= style_weight
+    content_score *= content_weight
+
+    return style_score + content_score
+
+
+@tf.function
+def compute_grads(config):
+    """Compute gradients and loss.
+
+    Args:
+        config: A dictionary containing the following:
+            config = {
+                'model': model,
+                'loss_weights': loss_weights,
+                'init_image': init_image,
+                'gram_style_features': gram_style_features,
+                'content_features': content_features
+            }
+
+    Returns:
+        The tuple (gradients, loss).
+    """
+    with tf.GradientTape() as tape:
+        loss = compute_loss(**config)
+    # Compute gradients wrt input image
+    return tape.gradient(loss, config['init_image']), loss
 
 
 @click.command()
-@click.argument('target_path', type=click.Path())
-@click.argument('reference_path', type=click.Path())
+@click.argument('content_image_path', type=click.Path())
+@click.argument('style_image_path', type=click.Path())
 @click.option('--iterations', type=click.INT, default=20,
               help='The number of iterations to run the optimization. Default is 20.')
 @click.option('--img_height', type=click.INT, default=400,
@@ -25,196 +230,63 @@ from tensorflow.keras.preprocessing.image import load_img
 @click.option('--content_weight', type=click.FLOAT, default=0.025,
               help=('The weight given to the content loss. A higher value means the target image content will '
                     'be more recognizable in the output. Default is 0.025.'))
-@click.option('--save_every', type=click.INT, default=sys.maxsize,
-              help='The frequency with with to save the output image. By default, only the last iteration is saved.')
-@click.option('--preserve_color', type=click.BOOL, default=False, help='Enables/disables color preservation.')
-@click.option('--verbose', type=click.BOOL, default=False, help='Specifies the output verbosity.')
-def main(target_path, reference_path, iterations, img_height, tv_weight,
-         style_weight, content_weight, save_every, preserve_color, verbose):
+@click.option('--save_gif', is_flag=True, help='If flag is set, a GIF will be saved showing the stylization process.')
+@click.option('--preserve_color', is_flag=True, help='Enables color preservation.')
+@click.option('--learning_rate', type=click.FLOAT, default=5., help='Adam learning rate. Default is 5.')
+@click.option('--beta_1', type=click.FLOAT, default=0.99, help='Value of beta1 in Adam optimizer. Default is 0.99.')
+@click.option('--beta_2', type=click.FLOAT, default=0.990, help='Value of beta2 in Adam optimizer. Default is 0.999.')
+@click.option('--epsilon', type=click.FLOAT, default=1e-1, help='Value of epsilon in Adam optimizer. Default is 0.1.')
+def main(content_image_path, style_image_path, iterations, img_height, tv_weight, style_weight, content_weight,
+         save_gif, preserve_color, learning_rate, beta_1, beta_2, epsilon):
     """Performs neural style transfer on a target image and reference image.
 
     The style of the reference image is imposed onto the target image. This is the original implementation of
     neural style transfer proposed by Leon Gatys et al. 2015. It is preferable to run this script on GPU, for speed.
-
-    The code in this script is adapted from Francois Chollet's 'Deep Learning with Python'.
     """
+    model = get_model()
 
-    def preprocess_image(image_path, mode):
-        """Loads and preprocesses the specified image."""
-        img = imread(image_path, mode=mode)
-        img = imresize(img, size=(img_height, img_width))
-        if mode == 'L':
-            temp = np.zeros((img_height, img_width, 3), dtype=np.uint8)
-            temp[:, :, 0] = img
-            temp[:, :, 1] = img.copy()
-            temp[:, :, 2] = img.copy()
-            img = temp
-        img = np.expand_dims(img, axis=0)
-        img = vgg19.preprocess_input(img)
-        return img
+    # Load images
+    content_image = load_and_process_img(content_image_path, img_height)
+    style_image = load_and_process_img(style_image_path, img_height)
 
-    def deprocess_image(x):
-        """Zero-centering by removing the mean pixel value from ImageNet.
+    # Compute content and style features
+    style_outputs = model(style_image)
+    content_outputs = model(content_image)
 
-        This reverses a transformation done by vgg19.preprocess_input.
-        """
-        x[:, :, 0] += 103.939
-        x[:, :, 1] += 116.779
-        x[:, :, 2] += 123.68
-        x = x[:, :, ::-1]
-        x = np.clip(x, 0, 255).astype('uint8')
-        return x
+    # Get the style and content feature representations from our model
+    style_features = [style_layer[0] for style_layer in style_outputs[:NUM_STYLE_LAYERS]]
+    content_features = [content_layer[0] for content_layer in content_outputs[NUM_STYLE_LAYERS:]]
+    gram_style_features = [gram_matrix(style_feature) for style_feature in style_features]
 
-    def content_loss(base, combination):
-        """Defines the content loss function."""
-        return K.sum(K.square(combination - base))
+    # Set initial image
+    init_image = load_and_process_img(content_image_path, img_height)
+    init_image = tf.Variable(init_image, dtype=tf.float32)
 
-    def gram_matrix(x):
-        """Returns the Gram matrix of the input."""
-        features = K.batch_flatten(K.permute_dimensions(x, (2, 0, 1)))
-        gram = K.dot(features, K.transpose(features))
-        return gram
+    # Create our optimizer
+    optimizer = tf.optimizers.Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2, epsilon=epsilon)
 
-    def style_loss(style, combination):
-        """Defines the style loss function."""
-        S = gram_matrix(style)
-        C = gram_matrix(combination)
-        channels = 3
-        size = img_height * img_width
-        return K.sum(K.square(S - C)) / (4. * (channels ** 2) * (size ** 2))
+    # Create config dictionary
+    loss_weights = (style_weight, content_weight)
+    config = {
+        'model': model,
+        'loss_weights': loss_weights,
+        'init_image': init_image,
+        'gram_style_features': gram_style_features,
+        'content_features': content_features
+    }
 
-    def total_variation_loss(x):
-        """Defines the total variation loss function.
-        This can be interpreted as a regularization loss.
-        """
-        a = K.square(
-            x[:, :img_height - 1, :img_width - 1, :] -
-            x[:, 1:, :img_width - 1, :])
-        b = K.square(
-            x[:, :img_height - 1, :img_width - 1, :] -
-            x[:, :img_height - 1, 1:, :])
-        return K.sum(K.pow(a + b, 1.25))
+    images = []
 
-    class Evaluator:
-        """This class wraps fetch_loss_and_grads in a way that allows the retrieval
-        of the losses and gradients via two separate method calls, which is required
-        by the SciPy optimizer that is used."""
-
-        def __init__(self):
-            self.loss_value = None
-            self.grad_values = None
-
-        def loss(self, x):
-            assert self.loss_value is None
-            x = x.reshape((1, img_height, img_width, 3))
-            outs = fetch_loss_and_grads([x])
-            loss_value = outs[0]
-            grad_values = outs[1].flatten().astype('float64')
-            self.loss_value = loss_value
-            self.grad_values = grad_values
-            return self.loss_value
-
-        def grads(self, x):
-            assert self.loss_value is not None
-            grad_values = np.copy(self.grad_values)
-            self.loss_value = None
-            self.grad_values = None
-            return grad_values
-
-    # Set image dimensions
-    width, height = load_img(target_path).size
-    img_width = int(width * img_height / height)
-
-    # Define images
-    target_image = K.constant(preprocess_image(target_path, 'RGB'))
-    reference_image = K.constant(preprocess_image(reference_path, 'RGB'))
-    combination_image = K.placeholder((1, img_height, img_width, 3))
-
-    # Concatenate images for batch processing
-    input_tensor = K.concatenate([target_image,
-                                  reference_image,
-                                  combination_image], axis=0)
-
-    # Load in the VGG19 network
-    model = vgg19.VGG19(input_tensor=input_tensor,
-                        weights='imagenet',
-                        include_top=False)
-
-    # Build a layer dictionary and define the layers to be used for content and style
-    outputs_dict = dict([(layer.name, layer.output) for layer in model.layers])
-    content_layer = 'block5_conv2'
-    style_layers = ['block1_conv1',
-                    'block2_conv1',
-                    'block3_conv1',
-                    'block4_conv1',
-                    'block5_conv1']
-
-    # Variable that holds the loss. All loss components will be added to this variable
-    loss = K.variable(0.)
-
-    # Add the content loss
-    layer_features = outputs_dict[content_layer]
-    target_image_features = layer_features[0, :, :, :]
-    combination_features = layer_features[2, :, :, :]
-    loss = loss + content_weight * content_loss(target_image_features,
-                                                combination_features)
-
-    # Add the style loss
-    for layer_name in style_layers:
-        layer_features = outputs_dict[layer_name]
-        style_reference_features = layer_features[1, :, :, :]
-        combination_features = layer_features[2, :, :, :]
-        sl = style_loss(style_reference_features, combination_features)
-        loss = loss + (style_weight / len(style_layers)) * sl
-
-    # Add the total variation loss
-    loss = loss + tv_weight * total_variation_loss(combination_image)
-
-    # Get the gradients of the generated image with regard to the loss
-    grads = K.gradients(loss, combination_image)[0]
-
-    # Function to fetch the values of the current loss and the current gradients
-    fetch_loss_and_grads = K.function([combination_image], [loss, grads])
-
-    evaluator = Evaluator()
-
-    # The target image is the initial state
-    x = preprocess_image(target_path, 'L' if preserve_color else 'RGB')
-    x = x.flatten()
-
-    if preserve_color:
-        original = imread(target_path, mode='YCbCr')
-        original = imresize(original, (img_height, img_width))
-
-    # Run L-BFGS optimization over the pixels of the generated image to minimize the neural style loss.
-    for i in range(iterations):
-        if verbose:
-            print('Start of iteration', i + 1)
-            start_time = time.time()
-
-        x, min_val, info = fmin_l_bfgs_b(evaluator.loss, x, fprime=evaluator.grads, maxfun=20)
-
-        if verbose:
-            print('Current loss value:', min_val)
-
-        if i == iterations - 1 or (i + 1) % save_every == 0:
-            img = x.copy().reshape((img_height, img_width, 3))
-            img = deprocess_image(img)
-
-            if preserve_color:
-                img = fromimage(toimage(img, mode='RGB'), mode='YCbCr')
-                img[:, :, 1:] = original[:, :, 1:]
-                img = fromimage(toimage(img, mode='YCbCr'), mode='RGB')
-
-            fname = 'stylized-{}.jpg'.format(i + 1)
-            imsave(fname, img)
-            if verbose:
-                print('Image saved.')
-
-        if verbose:
-            end_time = time.time()
-            print('Iteration %d completed in %ds' % (i + 1, end_time - start_time))
-            print()
+    # Optimization loop
+    for step in range(iterations):
+        start_time = time.time()
+        grads, loss = compute_grads(config)
+        optimizer.apply_gradients([(grads, init_image)])
+        clipped = tf.clip_by_value(init_image, MIN_VALS, MAX_VALS)
+        init_image.assign(clipped)
+        images.append(deprocess_image(init_image.numpy()))
+        end_time = time.time()
+        print('Finished step {}.  ({:.02} seconds)\nLoss: {:.03}\n'.format(step, end_time - start_time, loss))
 
 
 if __name__ == '__main__':

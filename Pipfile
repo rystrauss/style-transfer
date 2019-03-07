@@ -10,9 +10,11 @@ numpy = "*"
 pandas = "*"
 matplotlib = "*"
 scikit-learn = "*"
-tensorflow = "*"
+tensorflow = "==2.0.0-alpha0"
 click = "*"
 scipy = "*"
+scikit-image = "*"
+jupyter = "*"
 
 [requires]
 python_version = "3.7"
