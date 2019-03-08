@@ -15,6 +15,7 @@ click = "*"
 scipy = "*"
 scikit-image = "*"
 jupyter = "*"
+imageio = "*"
 
 [requires]
 python_version = "3.7"
