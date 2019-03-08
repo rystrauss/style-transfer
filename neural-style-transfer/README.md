@@ -8,18 +8,18 @@ This is the original neural style transfer algorithm, introduced by Leon Gatys e
 in deep convolutional neural networks to complete the style transfer.
 
 Below is an example of the output of this method, where the style of
-[The Great Wave off Kanagawa](examples/reference-wave.jpg) is transferred to the
-[Astronaut Sloth](examples/target-sloth.jpg).
+[The Great Wave off Kanagawa](../images/wave.jpg) is transferred to the
+[Astronaut Sloth](../images/sloth.jpg).
 
 ![The Great Sloth off Kanagawa](examples/stylized-sloth-wave.jpg)
 
 The script `neural_style_transfer.py` contains an implementation of this algorithm and a command line interface
-for performing the transfer on two images. The code is adapted from Francois Chollet's *Deep Learning with Python*.
+for performing the transfer on two images.
 
 ### Color Preservation
 
 In [Preserving Color in Neural Artistic Style Transfer][2], Gatys et al. introduce an extension of the original
 algorithm that allows for the color of the original image to be preserved during the style transfer process.
 They offer two methods for doing this: color histogram matching and luminance-only transfer. The latter method
-is implemented in `neural_style_transfer.py` as described in the paper, and can be enabled or disabled with a command
+is implemented in `neural_style_transfer.py` as described in the paper, and can be enabled with a command
 line flag.
