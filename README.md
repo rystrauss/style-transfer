@@ -4,7 +4,7 @@
 Neural style transfer is a collection of techniques that come out of deep learning that allow the style of one image
 to be transferred to the content of another. The method was first introduced by [Gatys et al.][1] in 2016.
 
-This repository contains implementations of the following style transfer algorithms in TensorFlow's Keras API.
+This repository contains implementations of style transfer algorithms in TensorFlow 2.
 
 ## Prerequisites
 
