@@ -8,9 +8,4 @@ This repository contains implementations of style transfer algorithms in TensorF
 
 ## Prerequisites
 
-The code in this repository relies on the following python packages, all of which can be installed via `pip`:
-
-* `tensorflow`
-* `numpy`
-* `scipy`
-* `click` (for command-line interface)
+The code in this repository relies on several packages. They are all listed in the `Pipfile` and can be easily installed from there with `pipenv`.
