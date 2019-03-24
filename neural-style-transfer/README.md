@@ -7,11 +7,14 @@ This is the original neural style transfer algorithm, introduced by Leon Gatys e
 [Image Style Transfer Using Convolutional Neural Networks][1]. The algorithm uses learned image representations
 in deep convolutional neural networks to complete the style transfer.
 
-Below is an example of the output of this method, where the style of
-[The Great Wave off Kanagawa](../images/wave.jpg) is transferred to the
-[Astronaut Sloth](../images/sloth.jpg).
+While the original paper suggests the L-BFGS-B optimization method, this implementation uses Adam, since
+L-BFGS-B is not included in TensorFlow.
 
-![The Great Sloth off Kanagawa](examples/stylized-sloth-wave.jpg)
+Below is an example of the output of this method, where the style of
+[The Great Wave off Kanagawa](images/wave.jpg) is transferred to the
+[Astronaut Sloth](images/sloth.jpg).
+
+![The Great Sloth off Kanagawa](images/stylized-sloth-wave.jpg)
 
 The script `neural_style_transfer.py` contains an implementation of this algorithm and a command line interface
 for performing the transfer on two images.

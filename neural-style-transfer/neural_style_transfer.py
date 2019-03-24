@@ -284,18 +284,18 @@ def create_gif(images, path):
 @click.argument('content_image_path', type=click.Path(file_okay=True, dir_okay=False, exists=True), nargs=1)
 @click.argument('style_image_path', type=click.Path(file_okay=True, dir_okay=False, exists=True), nargs=1)
 @click.option('--iterations', type=click.INT, default=100, nargs=1,
-              help='The number of iterations to run the optimization. Default is 20.')
+              help='The number of iterations to run the optimization. Default is 100.')
 @click.option('--content_img_height', type=click.INT, default=None, nargs=1,
               help='The height of the output image. Width will be based on the aspect ratio of the target image.')
 @click.option('--style_img_height', type=click.INT, default=None, nargs=1,
               help='The height of the reference image. Width will be based on the aspect ratio of the target image.')
-@click.option('--tv_weight', type=click.FLOAT, default=0.1, nargs=1,
-              help='The weight given to the total variation loss. Default is 0.1.')
+@click.option('--tv_weight', type=click.FLOAT, default=0.001, nargs=1,
+              help='The weight given to the total variation loss. Default is 0.001.')
 @click.option('--style_weight', type=click.FLOAT, default=1., nargs=1,
               help='The weight given to the style loss. Default is 1.')
-@click.option('--content_weight', type=click.FLOAT, default=0.025, nargs=1,
+@click.option('--content_weight', type=click.FLOAT, default=0.1, nargs=1,
               help=('The weight given to the content loss. A higher value means the target image content will '
-                    'be more recognizable in the output. Default is 0.025.'))
+                    'be more recognizable in the output. Default is 0.1.'))
 @click.option('--save_gif', is_flag=True, help='If flag is set, a GIF will be saved showing the stylization process.')
 @click.option('--preserve_color', is_flag=True, help='Enables color preservation.')
 @click.option('--learning_rate', type=click.FLOAT, default=5., nargs=1, help='Adam learning rate. Default is 5.')
