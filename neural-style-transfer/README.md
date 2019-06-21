@@ -11,7 +11,7 @@ While the original paper suggests the L-BFGS-B optimization method, this impleme
 L-BFGS-B is not included in TensorFlow.
 
 Below is an example of the output of this method, where the style of
-[The Great Wave off Kanagawa](images/wave.jpg) is transferred to the
+[The Great Wave off Kanagawa](../images/wave.jpg) is transferred to the
 [Astronaut Sloth](images/sloth.jpg).
 
 ![The Great Sloth off Kanagawa](images/stylized-sloth-wave.jpg)
